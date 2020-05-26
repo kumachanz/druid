@@ -4001,6 +4001,63 @@ public class GroupByQueryRunnerTest extends InitializedNullHandlingTest
     TestHelper.assertExpectedObjects(expectedResults, results, "lookup-limit");
   }
 
+  @Test
+  public void testGroupByWithInjectiveLookupAndLimitAndSortByDimsFirst()
+  {
+    // Cannot vectorize due to extraction dimension spec.
+    cannotVectorize();
+
+    Map<String, String> map = new HashMap<>();
+    map.put("automotive", "9");
+    map.put("business", "8");
+    map.put("entertainment", "7");
+    map.put("health", "6");
+    map.put("mezzanine", "5");
+    map.put("news", "4");
+    map.put("premium", "3");
+    map.put("technology", "2");
+    map.put("travel", "1");
+
+    GroupByQuery query = makeQueryBuilder()
+        .setDataSource(QueryRunnerTestHelper.DATA_SOURCE)
+        .setQuerySegmentSpec(QueryRunnerTestHelper.FIRST_TO_THIRD).setDimensions(new ExtractionDimensionSpec(
+            "quality",
+            "alias",
+            new LookupExtractionFn(new MapLookupExtractor(map, false), false, null, true, false)
+        )).setAggregatorSpecs(QueryRunnerTestHelper.ROWS_COUNT, new LongSumAggregatorFactory("idx", "index"))
+        .setLimitSpec(
+            new DefaultLimitSpec(
+                Collections.singletonList(new OrderByColumnSpec("alias", null, StringComparators.ALPHANUMERIC)),
+                11
+            )
+        )
+        .setGranularity(QueryRunnerTestHelper.DAY_GRAN)
+        .overrideContext(ImmutableMap.of("sortByDimsFirst", true))
+        .build();
+
+    List<ResultRow> expectedResults = Arrays.asList(
+        makeRow(query, "2011-04-01", "alias", "1", "rows", 1L, "idx", 119L),
+        makeRow(query, "2011-04-02", "alias", "1", "rows", 1L, "idx", 126L),
+
+        makeRow(query, "2011-04-01", "alias", "2", "rows", 1L, "idx", 78L),
+        makeRow(query, "2011-04-02", "alias", "2", "rows", 1L, "idx", 97L),
+
+        makeRow(query, "2011-04-01", "alias", "3", "rows", 3L, "idx", 2900L),
+        makeRow(query, "2011-04-02", "alias", "3", "rows", 3L, "idx", 2505L),
+
+        makeRow(query, "2011-04-01", "alias", "4", "rows", 1L, "idx", 121L),
+        makeRow(query, "2011-04-02", "alias", "4", "rows", 1L, "idx", 114L),
+
+        makeRow(query, "2011-04-01", "alias", "5", "rows", 3L, "idx", 2870L),
+        makeRow(query, "2011-04-02", "alias", "5", "rows", 3L, "idx", 2447L),
+
+        makeRow(query, "2011-04-01", "alias", "6", "rows", 1L, "idx", 120L)
+    );
+
+    Iterable<ResultRow> results = GroupByQueryRunnerTestHelper.runQuery(factory, runner, query);
+    TestHelper.assertExpectedObjects(expectedResults, results, "lookup-limit");
+  }
+
   @Ignore
   @Test
   // This is a test to verify per limit groupings, but Druid currently does not support this functionality. At a point
